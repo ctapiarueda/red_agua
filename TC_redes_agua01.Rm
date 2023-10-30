@@ -1,0 +1,177 @@
+---
+title: "Redes de Agua - OSSE"
+output: 
+  flexdashboard::flex_dashboard:
+    #social: ["menu"] (se puede compartir el html)
+    # source_code: embed (puede visualizarse el código)
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+#install.packages("readr")
+#install.packages("leaflet")
+#install.packages("leaflet.providers")
+library(flexdashboard)
+library(DBI)
+library(RPostgreSQL) #Descarga de librerias para conectarse a postgreSQL, se debe instalar además el paquet
+library(knitr)
+library(ggplot2) #permite crear gráficos de barra a partir de una tabla
+library(DT) #permite visualizar tablas, ordenarlas, filtrar
+library(leaflet)
+library(leaflet.providers)
+library(sf)
+library(readr)
+
+#conexion a la base de datos
+dvr <- dbDriver("PostgreSQL")
+
+conexion <- dbConnect(dvr, dbname = "sv01_jelu_gis",host="pg-01.osj.ossesanjuan.com.ar", port=5432,
+                 user="usr_ctapia", password="CTapia24") 
+```  
+
+
+
+Column {data-width=100}
+-----------------------------------------------------------------------
+
+### Longitud Redes Registradas OSSE
+```{r}
+# MOSTRAR CAJAS DE VALORES
+
+red_agua <- "SELECT (SUM(lnk_length)/1000)::integer AS longitudkm
+            FROM public.gra_redagualink
+            WHERE (lnk_sistema='OSSE')"
+red_agua<- dbGetQuery(conexion, red_agua)
+
+valueBox(red_agua, caption = "Longitud Red OSSE (Km)", icon="fa-minus")
+```
+
+### Plantas
+```{r}
+cant_plantas <- "SELECT COUNT(pls_tratamiento)
+                       FROM public.gra_plantasosse
+                      WHERE pls_administrador='OSSE' AND pls_tratamientoabrev='AGU' "
+cant_plantas <- dbGetQuery(conexion,cant_plantas)
+
+valueBox(cant_plantas, caption = "Plantas Potabilizadoras OSSE", icon="fa fa-tint")
+```
+
+### Perforaciones
+```{r}
+cant_perf <- "SELECT COUNT(ndo_id)
+                     FROM public.vw_reservoirs"
+cant_perf <- dbGetQuery(conexion, cant_perf)
+
+valueBox(cant_perf, caption = "Peforaciones", icon="fa-dot-circle-o")
+```
+
+### Diagramas
+```{r}
+cant_diag <- "SELECT COUNT(dag_id) FROM public.tbl_agdiagramas"
+cant_diag <- dbGetQuery(conexion, cant_diag)
+
+valueBox(cant_diag, caption = "Diagramas", icon="glyphicon glyphicon-file",color = "success")
+```
+
+### Detalle de Nudos
+```{r}
+# CAJAS DE VALORES
+
+cant_nud <- "SELECT COUNT(nud_numeroenchufes)
+FROM registra_obras.vw_detallenudos_x_obra01"
+cant_nud <- dbGetQuery(conexion, cant_nud)
+
+
+#cant_nud$nud_numeroenchufes <- round(sum(cant_nud$nud_numeroenchufes))
+#cant <- sum(cant_nud$nud_numeroenchufes)
+valueBox(cant_nud, caption = "Detalle Nudos", icon="fa fa-circle", color = "success")
+```
+
+
+
+Column {data-width=700}
+-----------------------------------------------------------------------
+
+### REDES REGISTRADAS POR SISTEMA
+
+```{r}
+
+red_agua <- "SELECT lnk_sistema AS Sistema, (SUM(lnk_length)/1000)::integer AS Longitud_Total_km
+FROM public.gra_redagualink
+GROUP BY lnk_sistema
+ORDER BY Longitud_Total_km DESC"
+
+long_reda <- dbGetQuery(conexion, red_agua)
+datatable(long_reda)
+
+```
+
+### 
+
+```{r}
+# Registro de redes por año
+
+library(ggplot2)
+red_agua <- "SELECT TO_CHAR(EXTRACT(YEAR FROM lnk_fecha_inserted)::integer, '9999') AS fecha,
+              SUM(lnk_length)/1000 AS longitudkm
+            FROM public.gra_redagualink
+			WHERE (lnk_sistema='OSSE' AND TO_CHAR(EXTRACT(YEAR FROM lnk_fecha_inserted)::integer, '9999')> '2019')
+			GROUP BY fecha 
+			ORDER BY fecha ASC"
+
+long_reda <- dbGetQuery(conexion, red_agua)
+
+#kable(long_reda, format="markdown")
+
+grafico <- ggplot(long_reda, aes(x= fecha, y=longitudkm))+
+  geom_bar(stat="identity")+
+  labs(title = "Longitud de Redes Registradas por Año (desde 2019)",x= "Año", y= "Longitud total (km)")
+
+# Muestra de grafico
+grafico
+
+```
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+
+### Plantas Potabilizadora OSSE
+```{r}
+cant_plantas <- "SELECT pls_nombre
+                       FROM public.gra_plantasosse
+                      WHERE pls_administrador='OSSE' AND pls_tratamientoabrev='AGU' "
+cant_plantas <- dbGetQuery(conexion,cant_plantas)
+
+datatable(cant_plantas)
+```
+
+### Perforaciones Estado
+```{r}
+perf <- "SELECT description,estado,ndo_geom
+                FROM public.vw_reservoirs
+                WHERE description is not null"
+perf <- dbGetQuery(conexion,perf)
+
+datatable(perf)
+```
+
+### Detalles de Nudos
+```{r}
+cant_nud <- "SELECT  ndo_tipo AS Tipo_nudo, COUNT(nud_numeroenchufes) AS cantidad
+FROM registra_obras.vw_detallenudos_x_obra01
+GROUP BY ndo_tipo
+ORDER BY  cantidad DESC
+LIMIT 30"
+
+cant_nud <- dbGetQuery(conexion, cant_nud)
+kable(cant_nud, format="markdown")
+```
+
+
+### Mapa Perforaciones
+
+
+
+
